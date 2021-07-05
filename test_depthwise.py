@@ -1,6 +1,9 @@
 from itertools import product
 import numpy as np
 
+BLOCK_IN = 16
+BLOCK_OUT = 4
+
 W = 42
 H = 42
 C = 8
@@ -10,13 +13,16 @@ TW = 14
 TH = 12
 TC = 4
 
+assert TC == BLOCK_OUT
+assert 9 <= BLOCK_IN
+
 
 def wgt_sz():
-    return 3*3*C
+    return BLOCK_IN*C
 
 
 def wi(c_outer, k0, k1, c_inner):
-    return c_inner + TC*(k1 + 3*(k0 + 3*c_outer))
+    return c_inner + TC*(k1 + 3*k0 + BLOCK_IN*c_outer)
 
 
 def wi2(k0, k1, c):
@@ -97,7 +103,7 @@ def ibi(i, j, c):
     return c + TC*(j + (TW+2)*i)
 
 
-wb = np.zeros((3*3*TC,), dtype=np.int8)
+wb = np.zeros((BLOCK_IN*TC,), dtype=np.int8)
 
 
 def wbi(k0, k1, c):
@@ -164,13 +170,13 @@ def depthwise_conv(range0, range1,
                    uop_codes):
 
     def ibi(i, j, c, o):
-        return c + inp_stride1 * j + inp_stride0 * i
+        return o*BLOCK_OUT + c + inp_stride1 * j + inp_stride0 * i
 
     def wbi(k0, k1, c, o):
-        return c + wgt_stride1 * k1 + wgt_stride0 * k0
+        return o*BLOCK_IN*BLOCK_OUT + c + wgt_stride1 * k1 + wgt_stride0 * k0
 
     def obi(i, j, c, o):
-        return c + out_stride1 * j + out_stride0 * i
+        return o*BLOCK_OUT + c + out_stride1 * j + out_stride0 * i
 
     for i_inner in range(0, range0, S):
         for j_inner in range(0, range1, S):
@@ -196,14 +202,13 @@ def tiled_and_buffered_mapped(inp, wgt):
                         j = j_outer*TW + j_inner
                         for c_inner in range(TC):
                             c = c_outer*TC + c_inner
-                            ib[ibi(i_inner, j_inner, c_inner)] = \
-                                inp[ii2(i, j, c)]
+                            ib[ibi(i_inner, j_inner,
+                                   c_inner)] = inp[ii2(i, j, c)]
                 # copy into wb
                 for c_inner in range(TC):
                     c = c_outer*TC + c_inner
                     for k0, k1 in product(range(3), range(3)):
-                        wb[wbi(
-                            k0, k1, c_inner)] = wgt[wi2(k0, k1, c)]
+                        wb[wbi(k0, k1, c_inner)] = wgt[wi2(k0, k1, c)]
 
                 depthwise_conv(min(H-i_outer*TH, TH), min(W-j_outer*TW, TW),
                                TC*(TW+2), TC, TC*3, TC, TW//S*TC, TC,
