@@ -168,7 +168,7 @@ def depthwise_conv(range0, range1,
                    wgt_stride0, wgt_stride1,
                    out_stride0, out_stride1,
                    uop_codes):
-
+    """S (convolution stride) should be a parameter"""
     def ibi(i, j, c, o):
         return o*BLOCK_OUT + c + inp_stride1 * j + inp_stride0 * i
 
@@ -195,7 +195,7 @@ def tiled_and_buffered_mapped(inp, wgt):
     for c_outer in range(C//TC):
         for i_outer in range((H+TH-1)//TH):
             for j_outer in range((W+TW-1)//TW):
-                # copy into ib
+                # Need to refactor into a load_inp instruction call
                 for i_inner in range(0, min(H-i_outer*TH, TH)+2):
                     i = i_outer*TH + i_inner
                     for j_inner in range(0, min(W-j_outer*TW, TW)+2):
@@ -204,7 +204,7 @@ def tiled_and_buffered_mapped(inp, wgt):
                             c = c_outer*TC + c_inner
                             ib[ibi(i_inner, j_inner,
                                    c_inner)] = inp[ii2(i, j, c)]
-                # copy into wb
+                # Need to refactor into a load_wgt instruction call
                 for c_inner in range(TC):
                     c = c_outer*TC + c_inner
                     for k0, k1 in product(range(3), range(3)):
@@ -214,7 +214,7 @@ def tiled_and_buffered_mapped(inp, wgt):
                                TC*(TW+2), TC, TC*3, TC, TW//S*TC, TC,
                                [(0, 0, 0)])
 
-                # copy from ob
+                # Need to refactor into a store_acc instruction call
                 for i_inner in range(0, min(H-i_outer*TH, TH), S):
                     i = i_outer*TH + i_inner
                     for j_inner in range(0, min(W-j_outer*TW, TW), S):
