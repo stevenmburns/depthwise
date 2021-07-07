@@ -35,8 +35,7 @@ def inp_sz():
 
 def ii(i_outer, j_outer, c_outer,
        i_inner, j_inner, c_inner):
-    return c_inner + TC*(j_inner + TW*j_outer
-                         + (W+2)*(i_inner + TH*i_outer + (H+2)*c_outer))
+    return c_inner + TC*(j_inner + TW*j_outer + (W+2)*(i_inner + TH*i_outer + (H+2)*c_outer))
 
 
 def ii2(i, j, c):
@@ -51,8 +50,7 @@ def out_sz():
 
 def oi(i_outer, j_outer, c_outer,
        i_inner, j_inner, c_inner):
-    return c_inner + TC*(j_inner + TW*j_outer
-                         + W//S*(i_inner + TH*i_outer + H//S*c_outer))
+    return c_inner + TC*(j_inner + TW*j_outer + W//S*(i_inner + TH*i_outer + H//S*c_outer))
 
 
 def oi2(i, j, c):
@@ -70,8 +68,7 @@ def gold(inp, wgt):
             for c in range(C):
                 inner = 0
                 for k0, k1 in product(range(3), range(3)):
-                    inner += ex(wgt[wi2(k0, k1, c)]) * \
-                        ex(inp[ii2(i+k0, j+k1, c)])
+                    inner += ex(wgt[wi2(k0, k1, c)]) * ex(inp[ii2(i+k0, j+k1, c)])
                 out[oi2(i//S, j//S, c)] += inner
     return out
 
@@ -90,8 +87,7 @@ def tiled(inp, wgt):
                             c = c_outer*TC + c_inner
                             inner = 0
                             for k0, k1 in product(range(3), range(3)):
-                                inner += ex(wgt[wi2(k0, k1, c)]) * \
-                                    ex(inp[ii2(i+k0, j+k1, c)])
+                                inner += ex(wgt[wi2(k0, k1, c)]) * ex(inp[ii2(i+k0, j+k1, c)])
                             out[oi2(i//S, j//S, c)] += inner
     return out
 
@@ -130,24 +126,20 @@ def tiled_and_buffered(inp, wgt):
                         j = j_outer*TW + j_inner
                         for c_inner in range(TC):
                             c = c_outer*TC + c_inner
-                            ib[ibi(i_inner, j_inner, c_inner)] = \
-                                inp[ii2(i, j, c)]
+                            ib[ibi(i_inner, j_inner, c_inner)] = inp[ii2(i, j, c)]
 
                 # copy into wb
                 for c_inner in range(TC):
                     c = c_outer*TC + c_inner
                     for k0, k1 in product(range(3), range(3)):
-                        wb[wbi(k0, k1, c_inner)] = \
-                            wgt[wi2(k0, k1, c)]
+                        wb[wbi(k0, k1, c_inner)] = wgt[wi2(k0, k1, c)]
 
                 for i_inner in range(0, min(H-i_outer*TH, TH), S):
                     for j_inner in range(0, min(W-j_outer*TW, TW), S):
                         for c_inner in range(TC):
                             inner = 0
                             for k0, k1 in product(range(3), range(3)):
-                                inner += \
-                                    ex(wb[wbi(k0, k1, c_inner)]) * \
-                                    ex(ib[ibi(i_inner+k0, j_inner+k1, c_inner)])
+                                inner += ex(wb[wbi(k0, k1, c_inner)]) * ex(ib[ibi(i_inner+k0, j_inner+k1, c_inner)])
                             ob[obi(i_inner//S, j_inner//S, c_inner)] = inner
 
                 # copy from ob
@@ -157,8 +149,7 @@ def tiled_and_buffered(inp, wgt):
                         j = j_outer*TW + j_inner
                         for c_inner in range(TC):
                             c = c_outer*TC + c_inner
-                            out[oi2(i//S, j//S, c)] = \
-                                ob[obi(i_inner//S, j_inner//S, c_inner)]
+                            out[oi2(i//S, j//S, c)] = ob[obi(i_inner//S, j_inner//S, c_inner)]
 
     return out
 
@@ -184,8 +175,7 @@ def depthwise_conv(range0, range1,
                 for c_inner in range(TC):
                     inner = 0
                     for k0, k1 in product(range(3), range(3)):
-                        inner += ex(wb[wbi(k0, k1, c_inner, wgt_off)]) * \
-                            ex(ib[ibi(i_inner+k0, j_inner+k1, c_inner, inp_off)])
+                        inner += ex(wb[wbi(k0, k1, c_inner, wgt_off)]) * ex(ib[ibi(i_inner+k0, j_inner+k1, c_inner, inp_off)])
                     ob[obi(i_inner//S, j_inner//S, c_inner, out_off)] = inner
 
 
@@ -202,8 +192,7 @@ def tiled_and_buffered_mapped(inp, wgt):
                         j = j_outer*TW + j_inner
                         for c_inner in range(TC):
                             c = c_outer*TC + c_inner
-                            ib[ibi(i_inner, j_inner,
-                                   c_inner)] = inp[ii2(i, j, c)]
+                            ib[ibi(i_inner, j_inner, c_inner)] = inp[ii2(i, j, c)]
                 # Need to refactor into a load_wgt instruction call
                 for c_inner in range(TC):
                     c = c_outer*TC + c_inner
@@ -221,8 +210,7 @@ def tiled_and_buffered_mapped(inp, wgt):
                         j = j_outer*TW + j_inner
                         for c_inner in range(TC):
                             c = c_outer*TC + c_inner
-                            out[oi2(i//S, j//S, c)] = \
-                                ob[obi(i_inner//S, j_inner//S, c_inner)]
+                            out[oi2(i//S, j//S, c)] = ob[obi(i_inner//S, j_inner//S, c_inner)]
 
     return out
 
