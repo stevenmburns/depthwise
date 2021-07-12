@@ -169,14 +169,15 @@ def depthwise_conv(range0, range1,
     def obi(i, j, c, o):
         return o * BLOCK_OUT + c + out_stride1 * j + out_stride0 * i
 
-    for i_inner in range(0, range0, S):
-        for j_inner in range(0, range1, S):
+    for i_inner in range(range0):
+        for j_inner in range(range1):
             for inp_off, wgt_off, out_off in uop_codes:
                 for c_inner in range(TC):
                     inner = 0
                     for k0, k1 in product(range(3), range(3)):
                         inner += ex(wb[wbi(k0, k1, c_inner, wgt_off)]) * ex(ib[ibi(i_inner + k0, j_inner + k1, c_inner, inp_off)])
-                    ob[obi(i_inner // S, j_inner // S, c_inner, out_off)] = inner
+                    if i_inner % S == 0 and j_inner % S == 0:
+                        ob[obi(i_inner // S, j_inner // S, c_inner, out_off)] = inner
 
 
 def tiled_and_buffered_mapped(inp, wgt):
