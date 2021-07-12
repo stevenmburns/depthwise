@@ -182,6 +182,8 @@ def depthwise_conv(range0, range1,
 
 def tiled_and_buffered_mapped(inp, wgt):
     assert C % TC == 0
+    assert TH % S == 0
+    assert TW % S == 0
     out = np.zeros((out_sz(),), dtype=np.int32)
     for c_outer in range(C // TC):
         for i_outer in range((H + TH - 1) // TH):
@@ -205,13 +207,13 @@ def tiled_and_buffered_mapped(inp, wgt):
                                [(0, 0, 0)])
 
                 # Need to refactor into a store_acc instruction call
-                for i_inner in range(0, min(H - i_outer * TH, TH), S):
-                    i = i_outer * TH + i_inner
-                    for j_inner in range(0, min(W - j_outer * TW, TW), S):
-                        j = j_outer * TW + j_inner
+                for i_inner in range((min(H - i_outer * TH, TH) + S - 1) // S):
+                    i = i_outer * TH // S + i_inner
+                    for j_inner in range((min(W - j_outer * TW, TW) + S - 1) // S):
+                        j = j_outer * TW // S + j_inner
                         for c_inner in range(TC):
                             c = c_outer * TC + c_inner
-                            out[oi2(i // S, j // S, c)] = ob[obi(i_inner // S, j_inner // S, c_inner)]
+                            out[oi2(i, j, c)] = ob[obi(i_inner, j_inner, c_inner)]
 
     return out
 
