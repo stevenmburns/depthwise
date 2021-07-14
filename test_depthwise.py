@@ -232,6 +232,55 @@ def depthwise_conv(range0, range1,
 
 from collections import deque
 
+class Linebuffer:
+    def __init__(self, width):
+        self.width = width
+        self.rows = [deque([None]*width), deque([None]*width)]
+        self.wins = [deque([None]*3), deque([None]*3), deque([None]*3)]
+        self.i = -1
+        self.j = 0
+
+
+    def add(self, el):
+        for win in self.wins:
+            win.popleft()
+
+        x = self.rows[0].popleft()
+        self.wins[0].append(x)
+
+        x = self.rows[1].popleft()
+        self.wins[1].append(x)
+        self.rows[0].append(x)
+
+        self.wins[2].append(el)
+        self.rows[1].append(el)
+
+        self.i += 1
+        if self.i == self.width:
+            self.j += 1
+            self.i = 0
+
+    @property
+    def valid(self):
+        return self.j >= 2 and self.i >= 2
+
+    @property
+    def sq(self):
+        result = np.zeros( (3,3), dtype=np.int8)
+        for k0, k1 in product(range(3), range(3)):
+            result[k0,k1] = self.wins[k0][k1]
+        return result
+
+def test_linebuffer():
+    lb = Linebuffer(7)
+    count = 0
+    for i,j in product(range(lb.width),range(lb.width)):
+        lb.add( lb.width*i+j)
+        if lb.valid:
+            count += 1
+    assert count == (lb.width-2)**2
+
+
 def depthwise_conv2(range0, range1,
                     inp_stride0, inp_stride1,
                     wgt_stride0, wgt_stride1,
@@ -247,24 +296,47 @@ def depthwise_conv2(range0, range1,
     def obi(i, j, c, o):
         return o * BLOCK_OUT + c + out_stride1 * j + out_stride0 * i
 
-    def gemm( tup):
-        sq, i_inner, j_inner, inp_off, wgt_off, out_off = tup
-        for c_inner in range(TC):
-            inner = 0
-            for k0, k1 in product(range(3), range(3)):
-                inner += ex(wb[wbi(k0, k1, c_inner, wgt_off)]) * ex(sq[k0,k1,c_inner])
-            if i_inner % S == 0 and j_inner % S == 0:
-                ob[obi(i_inner // S, j_inner // S, c_inner, out_off)] = inner
+    def gen_gemm():
+        while True:
+            sq, i_inner, j_inner, wgt_off, out_off = yield
+            for c_inner in range(TC):
+                inner = 0
+                for k0, k1 in product(range(3), range(3)):
+                    inner += ex(wb[wbi(k0, k1, c_inner, wgt_off)]) * ex(sq[k0,k1,c_inner])
+                if i_inner % S == 0 and j_inner % S == 0:
+                    ob[obi(i_inner // S, j_inner // S, c_inner, out_off)] = inner
+
+
+    sink = gen_gemm()
+    next(sink)
 
     # im2col
-    for i_inner in range(range0):
-        for j_inner in range(range1):
-            for inp_off, wgt_off, out_off in uop_codes:
-                sq = np.zeros( (3,3,TC), dtype=np.int8)
-                for k0, k1 in product(range(3), range(3)):
-                    for c_inner in range(TC):
-                        sq[k0,k1,c_inner] = ib[ibi(i_inner + k0, j_inner + k1, c_inner, inp_off)]
-                gemm( (sq, i_inner, j_inner, inp_off, wgt_off, out_off))
+    if False:
+        for i_inner in range(range0):
+            for j_inner in range(range1):
+                for inp_off, wgt_off, out_off in uop_codes:
+                    sq = np.zeros( (3,3,TC), dtype=np.int8)
+                    for k0, k1 in product(range(3), range(3)):
+                        for c_inner in range(TC):
+                            sq[k0,k1,c_inner] = ib[ibi(i_inner + k0, j_inner + k1, c_inner, inp_off)]
+                    sink.send( (sq, i_inner, j_inner, wgt_off, out_off))
+
+    # im2col
+    if True:
+        lb = Linebuffer(range1+2)
+        for i_inner in range(range0+2):
+            for j_inner in range(range1+2):
+                for inp_off, wgt_off, out_off in uop_codes:
+                    lb.add( [ib[ibi(i_inner, j_inner, c_inner, inp_off)] for c_inner in range(TC)])
+                    if lb.valid:
+                        sq = np.zeros( (3,3,TC), dtype=np.int8)
+                        for k0, k1 in product(range(3), range(3)):
+                            for c_inner in range(TC):
+                                sq[k0,k1,c_inner] = lb.wins[k0][k1][c_inner]
+                        sink.send( (sq, i_inner-2, j_inner-2, wgt_off, out_off))
+
+
+    
 
 
 
