@@ -180,6 +180,94 @@ def depthwise_conv(range0, range1,
                         ob[obi(i_inner // S, j_inner // S, c_inner, out_off)] = inner
 
 
+def depthwise_conv2(range0, range1,
+                    inp_stride0, inp_stride1,
+                    wgt_stride0, wgt_stride1,
+                    out_stride0, out_stride1,
+                    uop_codes):
+    """S (convolution stride) should be a parameter"""
+    def ibi(i, j, c, o):
+        return o * BLOCK_OUT + c + inp_stride1 * j + inp_stride0 * i
+
+    def wbi(k0, k1, c, o):
+        return o * BLOCK_IN * BLOCK_OUT + c + wgt_stride1 * k1 + wgt_stride0 * k0
+
+    def obi(i, j, c, o):
+        return o * BLOCK_OUT + c + out_stride1 * j + out_stride0 * i
+
+    for i_inner in range(range0):
+        for j_inner in range(range1):
+            for inp_off, wgt_off, out_off in uop_codes:
+                for c_inner in range(TC):
+                    inner = 0
+                    for k0, k1 in product(range(3), range(3)):
+                        inner += ex(wb[wbi(k0, k1, c_inner, wgt_off)]) * ex(ib[ibi(i_inner + k0, j_inner + k1, c_inner, inp_off)])
+                    if i_inner % S == 0 and j_inner % S == 0:
+                        ob[obi(i_inner // S, j_inner // S, c_inner, out_off)] = inner
+def depthwise_conv(range0, range1,
+                   inp_stride0, inp_stride1,
+                   wgt_stride0, wgt_stride1,
+                   out_stride0, out_stride1,
+                   uop_codes):
+    """S (convolution stride) should be a parameter"""
+    def ibi(i, j, c, o):
+        return o * BLOCK_OUT + c + inp_stride1 * j + inp_stride0 * i
+
+    def wbi(k0, k1, c, o):
+        return o * BLOCK_IN * BLOCK_OUT + c + wgt_stride1 * k1 + wgt_stride0 * k0
+
+    def obi(i, j, c, o):
+        return o * BLOCK_OUT + c + out_stride1 * j + out_stride0 * i
+
+    for i_inner in range(range0):
+        for j_inner in range(range1):
+            for inp_off, wgt_off, out_off in uop_codes:
+                for c_inner in range(TC):
+                    inner = 0
+                    for k0, k1 in product(range(3), range(3)):
+                        inner += ex(wb[wbi(k0, k1, c_inner, wgt_off)]) * ex(ib[ibi(i_inner + k0, j_inner + k1, c_inner, inp_off)])
+                    if i_inner % S == 0 and j_inner % S == 0:
+                        ob[obi(i_inner // S, j_inner // S, c_inner, out_off)] = inner
+
+
+from collections import deque
+
+def depthwise_conv2(range0, range1,
+                    inp_stride0, inp_stride1,
+                    wgt_stride0, wgt_stride1,
+                    out_stride0, out_stride1,
+                    uop_codes):
+    """S (convolution stride) should be a parameter"""
+    def ibi(i, j, c, o):
+        return o * BLOCK_OUT + c + inp_stride1 * j + inp_stride0 * i
+
+    def wbi(k0, k1, c, o):
+        return o * BLOCK_IN * BLOCK_OUT + c + wgt_stride1 * k1 + wgt_stride0 * k0
+
+    def obi(i, j, c, o):
+        return o * BLOCK_OUT + c + out_stride1 * j + out_stride0 * i
+
+    def gemm( tup):
+        sq, i_inner, j_inner, inp_off, wgt_off, out_off = tup
+        for c_inner in range(TC):
+            inner = 0
+            for k0, k1 in product(range(3), range(3)):
+                inner += ex(wb[wbi(k0, k1, c_inner, wgt_off)]) * ex(sq[k0,k1,c_inner])
+            if i_inner % S == 0 and j_inner % S == 0:
+                ob[obi(i_inner // S, j_inner // S, c_inner, out_off)] = inner
+
+    # im2col
+    for i_inner in range(range0):
+        for j_inner in range(range1):
+            for inp_off, wgt_off, out_off in uop_codes:
+                sq = np.zeros( (3,3,TC), dtype=np.int8)
+                for k0, k1 in product(range(3), range(3)):
+                    for c_inner in range(TC):
+                        sq[k0,k1,c_inner] = ib[ibi(i_inner + k0, j_inner + k1, c_inner, inp_off)]
+                gemm( (sq, i_inner, j_inner, inp_off, wgt_off, out_off))
+
+
+
 def tiled_and_buffered_mapped(inp, wgt):
     assert C % TC == 0
     assert TH % S == 0
@@ -202,9 +290,9 @@ def tiled_and_buffered_mapped(inp, wgt):
                     for k0, k1 in product(range(3), range(3)):
                         wb[wbi(k0, k1, c_inner)] = wgt[wi2(k0, k1, c)]
 
-                depthwise_conv(min(H - i_outer * TH, TH), min(W - j_outer * TW, TW),
-                               TC * (TW + 2), TC, TC * 3, TC, TW // S * TC, TC,
-                               [(0, 0, 0)])
+                depthwise_conv2(min(H - i_outer * TH, TH), min(W - j_outer * TW, TW),
+                                TC * (TW + 2), TC, TC * 3, TC, TW // S * TC, TC,
+                                [(0, 0, 0)])
 
                 # Need to refactor into a store_acc instruction call
                 for i_inner in range((min(H - i_outer * TH, TH) + S - 1) // S):
