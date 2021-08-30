@@ -92,21 +92,28 @@ def tiled(inp, wgt):
     return out
 
 
-ib = np.zeros(((TH + 2) * (TW + 2) * TC,), dtype=np.int8)
+ib_lsz = TC
+ib_sz = (TH + 2) * (TW + 2) * TC
+ib = np.zeros((2*ib_sz,), dtype=np.int8)
 
 
 def ibi(i, j, c):
     return c + TC * (j + (TW + 2) * i)
 
 
-wb = np.zeros((BLOCK_IN * TC,), dtype=np.int8)
+wb_lsz = BLOCK_IN * TC
+wb_sz = BLOCK_IN * TC
+wb = np.zeros((2*wb_sz,), dtype=np.int8)
 
 
 def wbi(k0, k1, c):
     return c + TC * (k1 + 3 * k0)
 
 
-ob = np.zeros((TH // S * TW // S * TC,), dtype=np.int32)
+ob_lsz = TC
+ob_sz = TH // S * TW // S * TC
+
+ob = np.zeros((2*ob_sz,), dtype=np.int32)
 
 
 def obi(i, j, c):
@@ -360,24 +367,24 @@ def depthwise_conv3(range0, range1,
                     sink.send( (sq, i_inner-2, j_inner-2, wgt_off, out_off))
 
 
-def load_wgt_inst( c_off, c_max, wgt):
+def load_wgt_inst( c_off, c_max, wgt, buf_off):
     for c_inner in range(c_max):
         for k0, k1 in product(range(3), range(3)):
-            wb[wbi(k0, k1, c_inner)] = wgt[wi2(k0, k1, c_off + c_inner)]
+            wb[buf_off + wbi(k0, k1, c_inner)] = wgt[wi2(k0, k1, c_off + c_inner)]
 
-def load_inp_inst( i_off, j_off, c_off, i_max, j_max, c_max, inp):
+def load_inp_inst( i_off, j_off, c_off, i_max, j_max, c_max, inp, buf_off):
     for i_inner in range(i_max):
         for j_inner in range(j_max):
             for c_inner in range(c_max):
-                ib[ibi(i_inner, j_inner, c_inner)] = \
+                ib[buf_off + ibi(i_inner, j_inner, c_inner)] = \
                     inp[ii2(i_off + i_inner, j_off + j_inner, c_off + c_inner)]
 
-def store_inst( i_off, j_off, c_off, i_max, j_max, c_max, out):
+def store_inst( i_off, j_off, c_off, i_max, j_max, c_max, out, buf_off):
     for i_inner in range(i_max):
         for j_inner in range(j_max):
             for c_inner in range(c_max):
                 out[oi2(i_off + i_inner, j_off + j_inner, c_off + c_inner)] = \
-                    ob[obi(i_inner, j_inner, c_inner)]
+                    ob[buf_off + obi(i_inner, j_inner, c_inner)]
     
 
 def tiled_and_buffered_mapped(inp, wgt, depthwise_inst=depthwise_conv3):
@@ -385,8 +392,18 @@ def tiled_and_buffered_mapped(inp, wgt, depthwise_inst=depthwise_conv3):
     assert TH % S == 0
     assert TW % S == 0
     out = np.zeros((out_sz(),), dtype=np.int32)
+
+    #
+    # Add double buffering
+    #   every other wgt instruction should be to a different address
+    #
+
+
+    wgt_parity = 0
+    inp_parity = 0
+
     for c_outer in range(C // TC):
-        load_wgt_inst( c_outer*TC, TC, wgt)
+        load_wgt_inst( c_outer*TC, TC, wgt, wgt_parity*wb_sz)
 
         for i_outer in range((H + TH - 1) // TH):
             for j_outer in range((W + TW - 1) // TW):
@@ -394,18 +411,21 @@ def tiled_and_buffered_mapped(inp, wgt, depthwise_inst=depthwise_conv3):
                                min(H - i_outer * TH, TH) + 2,
                                min(W - j_outer * TW, TW) + 2,
                                TC,
-                               inp)
+                               inp, inp_parity*ib_sz)
 
                 depthwise_inst(min(H - i_outer * TH, TH), min(W - j_outer * TW, TW),
                                TC * (TW + 2), TC, TC * 3, TC, TW // S * TC, TC,
-                               [(0, 0, 0)])
+                               [(inp_parity*ib_sz//ib_lsz, wgt_parity*wb_sz//wb_lsz, inp_parity*ob_sz//ob_lsz)])
 
                 store_inst(i_outer*TH//S, j_outer*TW//S, c_outer*TC,
                            (min(H - i_outer * TH, TH) + S - 1) // S,
                            (min(W - j_outer * TW, TW) + S - 1) // S,
                            TC,
-                           out)
+                           out, inp_parity*ob_sz)
 
+                inp_parity = (inp_parity) % 2
+
+        wgt_parity = (wgt_parity + 1) % 2
     return out
 
 
