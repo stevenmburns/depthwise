@@ -360,40 +360,51 @@ def depthwise_conv3(range0, range1,
                     sink.send( (sq, i_inner-2, j_inner-2, wgt_off, out_off))
 
 
+def load_wgt_inst( c_off, c_max, wgt):
+    for c_inner in range(c_max):
+        for k0, k1 in product(range(3), range(3)):
+            wb[wbi(k0, k1, c_inner)] = wgt[wi2(k0, k1, c_off + c_inner)]
+
+def load_inp_inst( i_off, j_off, c_off, i_max, j_max, c_max, inp):
+    for i_inner in range(i_max):
+        for j_inner in range(j_max):
+            for c_inner in range(c_max):
+                ib[ibi(i_inner, j_inner, c_inner)] = \
+                    inp[ii2(i_off + i_inner, j_off + j_inner, c_off + c_inner)]
+
+def store_inst( i_off, j_off, c_off, i_max, j_max, c_max, out):
+    for i_inner in range(i_max):
+        for j_inner in range(j_max):
+            for c_inner in range(c_max):
+                out[oi2(i_off + i_inner, j_off + j_inner, c_off + c_inner)] = \
+                    ob[obi(i_inner, j_inner, c_inner)]
+    
+
 def tiled_and_buffered_mapped(inp, wgt, depthwise_inst=depthwise_conv3):
     assert C % TC == 0
     assert TH % S == 0
     assert TW % S == 0
     out = np.zeros((out_sz(),), dtype=np.int32)
     for c_outer in range(C // TC):
+        load_wgt_inst( c_outer*TC, TC, wgt)
+
         for i_outer in range((H + TH - 1) // TH):
             for j_outer in range((W + TW - 1) // TW):
-                # Need to refactor into a load_inp instruction call
-                for i_inner in range(0, min(H - i_outer * TH, TH) + 2):
-                    i = i_outer * TH + i_inner
-                    for j_inner in range(0, min(W - j_outer * TW, TW) + 2):
-                        j = j_outer * TW + j_inner
-                        for c_inner in range(TC):
-                            c = c_outer * TC + c_inner
-                            ib[ibi(i_inner, j_inner, c_inner)] = inp[ii2(i, j, c)]
-                # Need to refactor into a load_wgt instruction call
-                for c_inner in range(TC):
-                    c = c_outer * TC + c_inner
-                    for k0, k1 in product(range(3), range(3)):
-                        wb[wbi(k0, k1, c_inner)] = wgt[wi2(k0, k1, c)]
+                load_inp_inst( i_outer*TH, j_outer*TW, c_outer*TC,
+                               min(H - i_outer * TH, TH) + 2,
+                               min(W - j_outer * TW, TW) + 2,
+                               TC,
+                               inp)
 
                 depthwise_inst(min(H - i_outer * TH, TH), min(W - j_outer * TW, TW),
                                TC * (TW + 2), TC, TC * 3, TC, TW // S * TC, TC,
                                [(0, 0, 0)])
 
-                # Need to refactor into a store_acc instruction call
-                for i_inner in range((min(H - i_outer * TH, TH) + S - 1) // S):
-                    i = i_outer * TH // S + i_inner
-                    for j_inner in range((min(W - j_outer * TW, TW) + S - 1) // S):
-                        j = j_outer * TW // S + j_inner
-                        for c_inner in range(TC):
-                            c = c_outer * TC + c_inner
-                            out[oi2(i, j, c)] = ob[obi(i_inner, j_inner, c_inner)]
+                store_inst(i_outer*TH//S, j_outer*TW//S, c_outer*TC,
+                           (min(H - i_outer * TH, TH) + S - 1) // S,
+                           (min(W - j_outer * TW, TW) + S - 1) // S,
+                           TC,
+                           out)
 
     return out
 
