@@ -393,12 +393,6 @@ def tiled_and_buffered_mapped(inp, wgt, depthwise_inst=depthwise_conv3):
     assert TW % S == 0
     out = np.zeros((out_sz(),), dtype=np.int32)
 
-    #
-    # Add double buffering
-    #   every other wgt instruction should be to a different address
-    #
-
-
     wgt_parity = 0
     inp_parity = 0
 
@@ -423,7 +417,7 @@ def tiled_and_buffered_mapped(inp, wgt, depthwise_inst=depthwise_conv3):
                            TC,
                            out, inp_parity*ob_sz)
 
-                inp_parity = (inp_parity) % 2
+                inp_parity = (inp_parity+1) % 2
 
         wgt_parity = (wgt_parity + 1) % 2
     return out
