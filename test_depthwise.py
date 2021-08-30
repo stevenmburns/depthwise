@@ -379,14 +379,14 @@ def tiled_and_buffered_mapped(inp, wgt, depthwise_inst=depthwise_conv3):
     assert C % TC == 0
     assert TH % S == 0
     assert TW % S == 0
-    out = np.zeros((out_sz(),), dtype=np.int32)
+
+    inst_stream = []
+
+    def ci( tbl):
+        inst_stream.append(tbl)
 
     wgt_parity = 0
     inp_parity = 0
-
-    def ci( tbl):
-        call_instruction( inp, wgt, out, depthwise_inst, tbl)
-
     for c_outer in range(C // TC):
         ci( {'nm': 'load_wgt_inst', 'c_off': c_outer*TC, 'c_max': TC, 'buf_off': wgt_parity*wb_sz})
 
@@ -419,6 +419,11 @@ def tiled_and_buffered_mapped(inp, wgt, depthwise_inst=depthwise_conv3):
                 inp_parity = (inp_parity+1) % 2
 
         wgt_parity = (wgt_parity + 1) % 2
+
+    out = np.zeros((out_sz(),), dtype=np.int32)
+    for tbl in inst_stream:
+        call_instruction( inp, wgt, out, depthwise_inst, tbl)
+
     return out
 
 
