@@ -58,7 +58,7 @@ def test_linebuffer():
 
 
 class Workload:
-    def __init__(self):
+    def __init__(self, **kwargs):
         self.BLOCK_IN = 16
         self.BLOCK_OUT = 4
 
@@ -71,6 +71,10 @@ class Workload:
         self.TH = 12
         self.TC = 4
 
+        # Override defaults with parameters if they exist
+        for k,v in kwargs:
+            setattr( self, k, v)
+        
         assert self.TC == self.BLOCK_OUT
         assert 9 <= self.BLOCK_IN
 
@@ -427,8 +431,8 @@ class Workload:
 
 
 @pytest.fixture
-def random_test():
-    wl = Workload()
+def random_test( **kwargs):
+    wl = Workload(**kwargs)
     wgt = np.random.randint(-128, 128, size=(wl.wgt_sz(),), dtype=np.int8)
     inp = np.random.randint(-128, 128, size=(wl.inp_sz(),), dtype=np.int8)
     out_gold = wl.gold(inp, wgt)
@@ -456,5 +460,10 @@ def test_C2(random_test):
 
 def test_C3(random_test):
     wgt,inp,out_gold,wl = random_test
+    out = wl.tiled_and_buffered_mapped(inp, wgt, depthwise_inst=wl.depthwise_conv3)
+    assert (out_gold == out).all()
+
+def test_C3a(random_test):
+    wgt,inp,out_gold,wl = random_test( { '
     out = wl.tiled_and_buffered_mapped(inp, wgt, depthwise_inst=wl.depthwise_conv3)
     assert (out_gold == out).all()
