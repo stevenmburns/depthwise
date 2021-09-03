@@ -61,17 +61,18 @@ class Workload:
     def __init__(self, *args, **kwargs):
         assert len(args) == 0
 
+        # machine related (parallelism and SRAM sizes)
         self.BLOCK_IN = 16
         self.BLOCK_OUT = 4
+        self.TW = 14
+        self.TH = 12
+        self.TC = self.BLOCK_OUT
 
+        # problem related
         self.W = 42
         self.H = 42
         self.C = 8
         self.S = 2
-
-        self.TW = 14
-        self.TH = 12
-        self.TC = 4
 
         # Override defaults with parameters if they exist
         for k,v in kwargs.items():
@@ -80,40 +81,37 @@ class Workload:
         assert self.TC == self.BLOCK_OUT
         assert 9 <= self.BLOCK_IN
 
+        # SRAM sizes (double buffered, no larger than needed)
         self.ib = np.zeros((2*self.ib_sz,), dtype=np.int8)
         self.wb = np.zeros((2*self.wb_sz,), dtype=np.int8)
         self.ob = np.zeros((2*self.ob_sz,), dtype=np.int32)
 
 
+    #Problem-related methods
     def wgt_sz(self):
         return self.BLOCK_IN * self.C
 
-
-    def wi(self, c_outer, k0, k1, c_inner):
-        return c_inner + self.TC * (k1 + 3 * k0 + self.BLOCK_IN * c_outer)
-
-
-    def wi2(self, k0, k1, c):
-        return self.wi(c // self.TC, k0, k1, c % self.TC)
-
-
     def inp_sz(self):
         return (self.W + 2) * (self.H + 2) * self.C
-
-
-    def ii(self, i_outer, j_outer, c_outer, i_inner, j_inner, c_inner):
-        return c_inner + self.TC * (j_inner + self.TW * j_outer + (self.W + 2) * (i_inner + self.TH * i_outer + (self.H + 2) * c_outer))
-
-
-    def ii2(self, i, j, c):
-        return self.ii(i // self.TH, j // self.TW, c // self.TC, i % self.TH, j % self.TW, c % self.TC)
-
 
     def out_sz(self):
         assert self.W % self.S == 0
         assert self.H % self.S == 0
         return self.W // self.S * self.H // self.S * self.C
 
+    def ii(self, i_outer, j_outer, c_outer, i_inner, j_inner, c_inner):
+        return c_inner + self.TC * (j_inner + self.TW * j_outer + (self.W + 2) * (i_inner + self.TH * i_outer + (self.H + 2) * c_outer))
+
+    def ii2(self, i, j, c):
+        return self.ii(i // self.TH, j // self.TW, c // self.TC, i % self.TH, j % self.TW, c % self.TC)
+
+    # (No problem related dependences)
+    def wi(self, c_outer, k0, k1, c_inner):
+        return c_inner + self.TC * (k1 + 3 * k0 + self.BLOCK_IN * c_outer)
+
+    # (No problem related dependences)
+    def wi2(self, k0, k1, c):
+        return self.wi(c // self.TC, k0, k1, c % self.TC)
 
     def oi(self, i_outer, j_outer, c_outer, i_inner, j_inner, c_inner):
         return c_inner + self.TC * (j_inner + self.TW * j_outer + self.W // self.S * (i_inner + self.TH * i_outer + self.H // self.S * c_outer))
@@ -153,6 +151,8 @@ class Workload:
         return out
 
 
+    # Machine-related
+
     @property
     def ib_lsz(self):
         return self.TC
@@ -174,7 +174,7 @@ class Workload:
         return self.BLOCK_IN * self.TC
 
 
-    def wbi(self, k0, k1, c):
+     def wbi(self, k0, k1, c):
         return c + self.TC * (k1 + 3 * k0)
 
 
@@ -238,7 +238,8 @@ class Workload:
                         wgt_stride0, wgt_stride1,
                         out_stride0, out_stride1,
                         uop_codes, S):
-        """S (convolution stride) should be a parameter"""
+
+        # Depend only on machine parameters
         def ibi(i, j, c, o):
             return o * self.BLOCK_OUT + c + inp_stride1 * j + inp_stride0 * i
 
@@ -263,7 +264,8 @@ class Workload:
                         wgt_stride0, wgt_stride1,
                         out_stride0, out_stride1,
                         uop_codes, S):
-        """S (convolution stride) should be a parameter"""
+
+        # Depend only on machine parameters
         def ibi(i, j, c, o):
             return o * self.BLOCK_OUT + c + inp_stride1 * j + inp_stride0 * i
 
@@ -302,7 +304,7 @@ class Workload:
                         out_stride0, out_stride1,
                         uop_codes, S):
 
-        """S (convolution stride) should be a parameter"""
+        # Depend only on machine parameters
         def ibi(i, j, c, o):
             return o * self.BLOCK_OUT + c + inp_stride1 * j + inp_stride0 * i
 
@@ -338,11 +340,13 @@ class Workload:
                         sink.send( (sq, i_inner-2, j_inner-2, wgt_off, out_off))
 
     def load_wgt_inst(self, c_off, c_max, wgt, buf_off):
+        # Need local versions of self.wbi and self.wi2 and the appropriate wgt strides
         for c_inner in range(c_max):
             for k0, k1 in product(range(3), range(3)):
                 self.wb[buf_off + self.wbi(k0, k1, c_inner)] = wgt[self.wi2(k0, k1, c_off + c_inner)]
 
     def load_inp_inst(self, i_off, j_off, c_off, i_max, j_max, c_max, inp, buf_off):
+        # Need local versions of self.ibi and self.ii2 and the appropriate inp strides
         for i_inner in range(i_max):
             for j_inner in range(j_max):
                 for c_inner in range(c_max):
@@ -350,6 +354,7 @@ class Workload:
                         inp[self.ii2(i_off + i_inner, j_off + j_inner, c_off + c_inner)]
 
     def store_inst(self, i_off, j_off, c_off, i_max, j_max, c_max, out, buf_off):
+        # Need local versions of self.oi2 and self.ob and the appropriate out strides
         for i_inner in range(i_max):
             for j_inner in range(j_max):
                 for c_inner in range(c_max):
