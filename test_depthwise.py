@@ -58,7 +58,9 @@ def test_linebuffer():
 
 
 class Workload:
-    def __init__(self, **kwargs):
+    def __init__(self, *args, **kwargs):
+        assert len(args) == 0
+
         self.BLOCK_IN = 16
         self.BLOCK_OUT = 4
 
@@ -72,7 +74,7 @@ class Workload:
         self.TC = 4
 
         # Override defaults with parameters if they exist
-        for k,v in kwargs:
+        for k,v in kwargs.items():
             setattr( self, k, v)
         
         assert self.TC == self.BLOCK_OUT
@@ -430,40 +432,39 @@ class Workload:
         return out
 
 
-@pytest.fixture
 def random_test( **kwargs):
-    wl = Workload(**kwargs)
+    wl = Workload( **kwargs)
     wgt = np.random.randint(-128, 128, size=(wl.wgt_sz(),), dtype=np.int8)
     inp = np.random.randint(-128, 128, size=(wl.inp_sz(),), dtype=np.int8)
     out_gold = wl.gold(inp, wgt)
     return wgt,inp,out_gold,wl
 
-def test_A(random_test):
-    wgt,inp,out_gold,wl = random_test
+def test_A():
+    wgt,inp,out_gold,wl = random_test()
     out = wl.tiled(inp, wgt)
     assert (out_gold == out).all()
 
-def test_B(random_test):
-    wgt,inp,out_gold,wl = random_test
+def test_B():
+    wgt,inp,out_gold,wl = random_test()
     out = wl.tiled_and_buffered(inp, wgt)
     assert (out_gold == out).all()
 
-def test_C1(random_test):
-    wgt,inp,out_gold,wl = random_test
+def test_C1():
+    wgt,inp,out_gold,wl = random_test()
     out = wl.tiled_and_buffered_mapped(inp, wgt, depthwise_inst=wl.depthwise_conv1)
     assert (out_gold == out).all()
 
-def test_C2(random_test):
-    wgt,inp,out_gold,wl = random_test
+def test_C2():
+    wgt,inp,out_gold,wl = random_test()
     out = wl.tiled_and_buffered_mapped(inp, wgt, depthwise_inst=wl.depthwise_conv2)
     assert (out_gold == out).all()
 
-def test_C3(random_test):
-    wgt,inp,out_gold,wl = random_test
+def test_C3():
+    wgt,inp,out_gold,wl = random_test()
     out = wl.tiled_and_buffered_mapped(inp, wgt, depthwise_inst=wl.depthwise_conv3)
     assert (out_gold == out).all()
 
-def test_C3a(random_test):
-    wgt,inp,out_gold,wl = random_test( { '
+def test_C3a():
+    wgt,inp,out_gold,wl = random_test( W=43, S=1)
     out = wl.tiled_and_buffered_mapped(inp, wgt, depthwise_inst=wl.depthwise_conv3)
     assert (out_gold == out).all()
