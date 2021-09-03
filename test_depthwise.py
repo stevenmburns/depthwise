@@ -99,26 +99,23 @@ class Workload:
         assert self.H % self.S == 0
         return self.W // self.S * self.H // self.S * self.C
 
-    def ii(self, i_outer, j_outer, c_outer, i_inner, j_inner, c_inner):
-        return c_inner + self.TC * (j_inner + self.TW * j_outer + (self.W + 2) * (i_inner + self.TH * i_outer + (self.H + 2) * c_outer))
 
-    def ii2(self, i, j, c):
-        return self.ii(i // self.TH, j // self.TW, c // self.TC, i % self.TH, j % self.TW, c % self.TC)
+    def ii(self, i, j, c):
+        def aux(i_outer, j_outer, c_outer, i_inner, j_inner, c_inner):
+            return c_inner + self.TC * (j_inner + self.TW * j_outer + (self.W + 2) * (i_inner + self.TH * i_outer + (self.H + 2) * c_outer))
 
-    # (No problem related dependences)
-    def wi(self, c_outer, k0, k1, c_inner):
-        return c_inner + self.TC * (k1 + 3 * k0 + self.BLOCK_IN * c_outer)
+        return aux(i // self.TH, j // self.TW, c // self.TC, i % self.TH, j % self.TW, c % self.TC)
 
     # (No problem related dependences)
-    def wi2(self, k0, k1, c):
-        return self.wi(c // self.TC, k0, k1, c % self.TC)
+    def wi(self, k0, k1, c):
+        def aux(c_outer, k0, k1, c_inner):
+            return c_inner + self.TC * (k1 + 3 * k0 + self.BLOCK_IN * c_outer)
+        return aux(c // self.TC, k0, k1, c % self.TC)
 
-    def oi(self, i_outer, j_outer, c_outer, i_inner, j_inner, c_inner):
-        return c_inner + self.TC * (j_inner + self.TW * j_outer + self.W // self.S * (i_inner + self.TH * i_outer + self.H // self.S * c_outer))
-
-
-    def oi2(self, i, j, c):
-        return self.oi(i // self.TH, j // self.TW, c // self.TC, i % self.TH, j % self.TW, c % self.TC)
+    def oi(self, i, j, c):
+        def aux(i_outer, j_outer, c_outer, i_inner, j_inner, c_inner):
+            return c_inner + self.TC * (j_inner + self.TW * j_outer + self.W // self.S * (i_inner + self.TH * i_outer + self.H // self.S * c_outer))
+        return aux(i // self.TH, j // self.TW, c // self.TC, i % self.TH, j % self.TW, c % self.TC)
 
     def gold(self, inp, wgt):
         out = np.zeros((self.out_sz(),), dtype=np.int32)
@@ -127,8 +124,8 @@ class Workload:
                 for c in range(self.C):
                     inner = 0
                     for k0, k1 in product(range(3), range(3)):
-                        inner += ex(wgt[self.wi2(k0, k1, c)]) * ex(inp[self.ii2(i + k0, j + k1, c)])
-                    out[self.oi2(i // self.S, j // self.S, c)] += inner
+                        inner += ex(wgt[self.wi(k0, k1, c)]) * ex(inp[self.ii(i + k0, j + k1, c)])
+                    out[self.oi(i // self.S, j // self.S, c)] += inner
         return out
 
 
@@ -146,8 +143,8 @@ class Workload:
                                 c = c_outer * self.TC + c_inner
                                 inner = 0
                                 for k0, k1 in product(range(3), range(3)):
-                                    inner += ex(wgt[self.wi2(k0, k1, c)]) * ex(inp[self.ii2(i + k0, j + k1, c)])
-                                out[self.oi2(i // self.S, j // self.S, c)] += inner
+                                    inner += ex(wgt[self.wi(k0, k1, c)]) * ex(inp[self.ii(i + k0, j + k1, c)])
+                                out[self.oi(i // self.S, j // self.S, c)] += inner
         return out
 
 
@@ -174,7 +171,7 @@ class Workload:
         return self.BLOCK_IN * self.TC
 
 
-     def wbi(self, k0, k1, c):
+    def wbi(self, k0, k1, c):
         return c + self.TC * (k1 + 3 * k0)
 
 
@@ -199,7 +196,7 @@ class Workload:
             for c_inner in range(self.TC):
                 c = c_outer * self.TC + c_inner
                 for k0, k1 in product(range(3), range(3)):
-                    self.wb[self.wbi(k0, k1, c_inner)] = wgt[self.wi2(k0, k1, c)]
+                    self.wb[self.wbi(k0, k1, c_inner)] = wgt[self.wi(k0, k1, c)]
 
             for i_outer in range((self.H + self.TH - 1) // self.TH):
                 for j_outer in range((self.W + self.TW - 1) // self.TW):
@@ -210,7 +207,7 @@ class Workload:
                             j = j_outer * self.TW + j_inner
                             for c_inner in range(self.TC):
                                 c = c_outer * self.TC + c_inner
-                                self.ib[self.ibi(i_inner, j_inner, c_inner)] = inp[self.ii2(i, j, c)]
+                                self.ib[self.ibi(i_inner, j_inner, c_inner)] = inp[self.ii(i, j, c)]
 
 
                     for i_inner in range(0, min(self.H - i_outer * self.TH, self.TH), self.S):
@@ -228,7 +225,7 @@ class Workload:
                             j = j_outer * self.TW + j_inner
                             for c_inner in range(self.TC):
                                 c = c_outer * self.TC + c_inner
-                                out[self.oi2(i // self.S, j // self.S, c)] = self.ob[self.obi(i_inner // self.S, j_inner // self.S, c_inner)]
+                                out[self.oi(i // self.S, j // self.S, c)] = self.ob[self.obi(i_inner // self.S, j_inner // self.S, c_inner)]
 
         return out
 
@@ -340,25 +337,25 @@ class Workload:
                         sink.send( (sq, i_inner-2, j_inner-2, wgt_off, out_off))
 
     def load_wgt_inst(self, c_off, c_max, wgt, buf_off):
-        # Need local versions of self.wbi and self.wi2 and the appropriate wgt strides
+        # Need local versions of self.wbi and self.wi and the appropriate wgt strides
         for c_inner in range(c_max):
             for k0, k1 in product(range(3), range(3)):
-                self.wb[buf_off + self.wbi(k0, k1, c_inner)] = wgt[self.wi2(k0, k1, c_off + c_inner)]
+                self.wb[buf_off + self.wbi(k0, k1, c_inner)] = wgt[self.wi(k0, k1, c_off + c_inner)]
 
     def load_inp_inst(self, i_off, j_off, c_off, i_max, j_max, c_max, inp, buf_off):
-        # Need local versions of self.ibi and self.ii2 and the appropriate inp strides
+        # Need local versions of self.ibi and self.ii and the appropriate inp strides
         for i_inner in range(i_max):
             for j_inner in range(j_max):
                 for c_inner in range(c_max):
                     self.ib[buf_off + self.ibi(i_inner, j_inner, c_inner)] = \
-                        inp[self.ii2(i_off + i_inner, j_off + j_inner, c_off + c_inner)]
+                        inp[self.ii(i_off + i_inner, j_off + j_inner, c_off + c_inner)]
 
     def store_inst(self, i_off, j_off, c_off, i_max, j_max, c_max, out, buf_off):
-        # Need local versions of self.oi2 and self.ob and the appropriate out strides
+        # Need local versions of self.oi and self.ob and the appropriate out strides
         for i_inner in range(i_max):
             for j_inner in range(j_max):
                 for c_inner in range(c_max):
-                    out[self.oi2(i_off + i_inner, j_off + j_inner, c_off + c_inner)] = \
+                    out[self.oi(i_off + i_inner, j_off + j_inner, c_off + c_inner)] = \
                         self.ob[buf_off + self.obi(i_inner, j_inner, c_inner)]
 
 
